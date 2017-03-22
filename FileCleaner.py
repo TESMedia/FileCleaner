@@ -1,4 +1,4 @@
-#FILE CLEANER - 13 Mar 2017 - Jon Masters v1.3 
+Prog='FILE CLEANER v1.3' # - 13 Mar 2017 - Jon Masters 
 # This Programme will clean a set of data files ready for detailed analysis by:
 #  a) removing data rows related to randomised Mac Addresses
 #  b) removing Mac Address included in an exclusion file (static devices and crew)
@@ -15,9 +15,8 @@ macexclusions = 'exclusionsDiscovery1'                  # exclusions file to be 
 cleaned = 'TUI_D1_location_data_'                       # name allocated to cleaned file ='cleaned+MM-DD-YYYY.csv.gz'
 runFrom = 22                                            # days prior to current day processing starts from (normally 15)
 findMore = 2000                                         # if Common Macs falls below this threshold, next day is added
-logfile = 'FILE CLEANER v1.3, Log for run  '
+logfile = 'Log for run  '
 tfrom = ' 18:00:00'
-print ('FILE CLEANER v1.3')
 
 import matplotlib.path as mplPath
 import numpy as np                                     # To add GeoFencing also update code lines 250-270  
@@ -45,30 +44,22 @@ import os
 import errno
 import gzip
 import csv
+import logging
+print (Prog)
 
 # 2. Initial set up, establish a start date for Files to be cleaned, and initiate loop
 currentdate = datetime.datetime.today()                   # create a run log file with current DateTime in file name 
 logdate="{:%m%d-%H%M}".format(currentdate)
-logRun=open(rootDir+logfile+logdate+'.txt','w')
-logRun.write ('Log '+logdate+'\n')
+logging.basicConfig(filename=rootDir+logfile+logdate+'.txt',format='%(levelname)s: %(message)s',level=logging.DEBUG)
+logging.info('Log '+logdate+',  '+Prog)
 try:
-    inputFile = open(rootDir+macexclusions+'.csv')        # load the list of Macs for exclusion into 'MacExcl'
+    dfData2 = pd.read_csv(rootDir+macexclusions+'.csv', usecols= [0], names=['mac'])
 except Exception as e:
-    logRun.write('Error occurred trying to open Mac Address exclusion file - Exclusions set to None'+'\n')
-    logRun.write('  '+str(e)+'\n')
-    print ('Opening the exclusions file failed, setting exclusions to 0 -',e)
-    dfData2 = pd.DataFrame(columns=['mac'])    
-else:
-    try:
-        dfData2 = pd.read_csv(inputFile , usecols= [0], names=['mac'])
-    except Exception as e:
-        logRun.write('Error occurred reading Mac Address exclusion file - Exclusions set to None'+'\n')
-        logRun.write('  '+str(e)+'n')
-        print ('Reading exclusions file failed, setting exclusions to 0 -',e)
-    else:
-        inputFile.close()
+    logging.info('Error occurred reading Mac Address exclusion file - Exclusions set to None'+'\n'+'      '+str(e))
+    print ('Reading exclusions file failed, setting exclusions to 0 -',e)
+    dfData2 = pd.DataFrame(columns=['mac'])
+dfData2['mac']=dfData2['mac'].str.lower()
 MacExcl=dfData2.mac.unique()                              # establish data for start up and initiate loop
-MacValues=['0','1','4','5','8','9','c','d']
 dfData = pd.DataFrame(columns=['mac','type','time','user','area','site','bld','floor','x','y'])
 dfData2 = pd.DataFrame(columns=['mac'])
 dfData4 = pd.DataFrame(columns=['mac'])
@@ -80,39 +71,31 @@ while date1<currentdate:
     file1date="{:%m-%d-%Y}".format(date1)
     file1path="{:%y%m}".format(date1)
     if os.path.isfile(rootDir+file1path+subDirout+cleaned+file1date+'.csv.gz')==True:
-        logRun.write('Cleaned file found for date '+file1date+'\n')
+        logging.info('Cleaned file found for date '+file1date)
         date1=date1+timedelta(days=1)
-        print (file1date,' already cleaned')
+        print (file1date,'already cleaned')
         dfData = pd.DataFrame(columns=['mac','type','time','user','area','site','bld','floor','x','y'])
         dfData4 = dfData2
         dfData2 = pd.DataFrame(columns=['mac'])                        
         continue
     if dfData.empty==True:
         try:
-            inputFile=gzip.open(rootDir+file1path+'\\'+file+file1date+'.csv.gz')
+            dfData = pd.read_csv(rootDir+file1path+'\\'+file+file1date+'.csv.gz' , names=['mac','type','time','user','area','site','bld','floor','x','y'], parse_dates = ['time'])
         except Exception as e:
-            logRun.write('Error occurred trying to open file to be cleaned dated '+file1date+', Programme terminated.'+'\n')
-            logRun.write('  '+str(e)+'\n')
-            print('Error opening file to be cleaned - ',e)
-            break
-        try:
-            dfData = pd.read_csv(inputFile , names=['mac','type','time','user','area','site','bld','floor','x','y'], parse_dates = ['time'])
-        except Exception as e:
-            logRun.write('Error occurred trying to read file to be cleaning dated '+file1date+', Programme terminated.'+'\n')
-            logRun.write('  '+str(e)+'\n')
+            logging.error('Error occurred trying to read file to be cleaned dated '+file1date+', Programme terminated.'+'\n'+'      '+str(e))
             print ('Error reading file to be cleaned - ',e)
             break
-        inputFile.close()
     InitSize = len(dfData)                                      # establish initial size of file   
     InitMacs = len(dfData.mac.unique())
+    dfData['mac']=dfData['mac'].str.lower()
     dfData = dfData[dfData['mac'].isin(MacExcl)==False]         # remove excluded Mac Addresses
     XMac = InitMacs-len(dfData.mac.unique())
-    dfData = dfData[dfData.mac.str[1:2].isin(MacValues)]        # remove randomised Mac Addresses
+    dfData = dfData[dfData.mac.str[1:2].isin(['0','1','4','5','8','9','c','d'])]        # remove randomised Mac Addresses
     dfData.sort_values(['mac','time'], ascending=[True,True], inplace=True)
     PMac = dfData.mac.unique()
     YMac = InitMacs-XMac-len(PMac)
     print ('File ',file1date,' loaded, ',XMac,' exclusions and ',YMac,' randomised Macs removed, leaving ',len(PMac),'Macs.')
-    logRun.write ('File '+str(file1date)+' initial rows '+str(InitSize)+', '+str(XMac)+' and '+str(YMac)+' excluded & randomised Macs removed, leaving '+str(len(PMac))+'\n')
+    logging.info('File '+str(file1date)+' initial rows '+str(InitSize)+', '+str(XMac)+' and '+str(YMac)+' excluded & randomised Macs removed, leaving '+str(len(PMac)))
     try:
         os.makedirs(rootDir+file1path+subDirout)                # Create the Cleaned sub-directory if it does not already exist
     except IOError as e:
@@ -126,46 +109,28 @@ while date1<currentdate:
         file2date="{:%m-%d-%Y}".format(date1-timedelta(days=1))
         file2path="{:%y%m}".format(date1-timedelta(days=1))
         try:
-            inputFile=gzip.open(rootDir+file2path+subDirout+'TUI_D1_Macs'+file2date+'.csv.gz')
+            dfData2= pd.read_csv(rootDir+file2path+subDirout+'TUI_D1_Macs'+file2date+'.csv.gz', usecols= [0], names=['mac'])
         except Exception as e:
             try:
-                inputFile=gzip.open(rootDir+file2path+'\\'+file+file2date+'.csv.gz')
+                dfData2=pd.read_csv(rootDir+file2path+'\\'+file+file2date+'.csv.gz', usecols= [0], names=['mac'])
             except Exception as e:
-                logRun.write('Error occurred trying to open file dated '+file2date+', Programme terminated.'+'\n')
-                logRun.write('  '+str(e)+'\n')
-                print('Error opening file day before - ',e)
+                logging.error('Error occurred trying to read file dated '+file2date+', Programme terminated.'+'\n'+'      '+str(e))
+                print('Error reading file day before - ',e)
                 break
-        try:
-            dfData2 = pd.read_csv(inputFile , usecols= [0], names=['mac'])
-        except Exception as e:
-            logRun.write('Error occurred trying to read file dated '+file2date+', Programme terminated.'+'\n')
-            logRun.write('  '+str(e)+'\n')
-            print ('Error reading file day before - ',e)
-            break
-        else:
-            inputFile.close()   
     if dfData4.empty==True:                                   # if Mac addresses for 2 days ago not already in memory, load them
         file4date="{:%m-%d-%Y}".format(date1-timedelta(days=2))
         file4path="{:%y%m}".format(date1-timedelta(days=2))
         try:
-            inputFile=gzip.open(rootDir+file4path+subDirout+'TUI_D1_Macs'+file4date+'.csv.gz')
+            dfData4=pd.read_csv(rootDir+file4path+subDirout+'TUI_D1_Macs'+file4date+'.csv.gz', usecols= [0], names=['mac'])
         except Exception as e:
             try:
-                inputFile=gzip.open(rootDir+file4path+'\\'+file+file4date+'.csv.gz')
+                dfData4=pd.read_csv(rootDir+file4path+'\\'+file+file4date+'.csv.gz', usecols= [0], names=['mac'])
             except Exception as e:
-                logRun.write('Error occurred trying to open file dated '+file4date+', Programme terminated.'+'\n')
-                logRun.write('  '+str(e)+'\n')
-                print('Error opening file 2 days before - ',e)
+                logging.error('Error occurred trying to read file dated '+file4date+', Programme terminated.'+'\n'+'      '+str(e))
+                print('Error reading file 2 days before - ',e)
                 break
-        try:
-            dfData4 = pd.read_csv(inputFile , usecols= [0], names=['mac'])
-        except Exception as e:
-            logRun.write('Error occurred trying to read file dated '+file4date+', Programme terminated.'+'\n')
-            logRun.write('  '+str(e)+'\n')
-            print ('Error reading file 2 days before - ',e)
-            break
-        else:
-            inputFile.close()
+    dfData2['mac'] = dfData2['mac'].str.lower()
+    dfData4['mac'] = dfData4['mac'].str.lower()
     TgtMacs = dfData2.mac.unique()   
     dfData4 = dfData4[dfData4['mac'].isin(TgtMacs)]         # identify Mac Address common with previous 2 days
     TgtMacs = dfData4.mac.unique()
@@ -176,20 +141,12 @@ while date1<currentdate:
         file3date="{:%m-%d-%Y}".format(date1+timedelta(days=1))
         file3path="{:%y%m}".format(date1+timedelta(days=1))
         try:
-            inputFile=gzip.open(rootDir+file3path+'\\'+file+file3date+'.csv.gz')
+            dfData3 = pd.read_csv(rootDir+file3path+'\\'+file+file3date+'.csv.gz' , names=['mac','type','time','user','area','site','bld','floor','x','y'], parse_dates=['time'])
         except Exception as e:
-            logRun.write('Error occurred trying to open next days file dated '+file3date+', Programme terminated.'+'\n')
-            logRun.write('  '+str(e)+'\n')
-            print('Error opening next days file - ',e)
-            break
-        try:
-            dfData3 = pd.read_csv(inputFile , names=['mac','type','time','user','area','site','bld','floor','x','y'], parse_dates=['time'])
-        except Exception as e:
-            logRun.write('Error occurred trying to read next days file dated '+file1date+', Programme terminated.'+'\n')
-            logRun.write('  '+str(e)+'\n')
+            logging.error('Error occurred trying to read next days file dated '+file1date+', Programme terminated.'+'\n'+'      '+str(e))
             print ('Error reading next days file - ',e)
             break
-        inputFile.close()
+        dfData3['mac'] = dfData3['mac'].str.lower()
         s = file3date+tfrom
         dayfrom = datetime.datetime.strptime(s,"%m-%d-%Y %H:%M:%S")
         print ('file for next day loaded')
@@ -202,9 +159,16 @@ while date1<currentdate:
         fileMacs = CMac
         dfData3 = pd.DataFrame(columns=['mac','type','time','user','area','site','bld','floor','x','y'])
     print ('Macs in neighbouring files =',len(TgtMacs),'. With ',CMac,' Macs matching the 2 days before, Macs in common =',fileMacs)
-    logRun.write('  Based on '+str(len(TgtMacs))+' Mac in neighbouring files and '+str(CMac)+' matching the 2 days before, file reduced to '+str(fileMacs)+' Macs.'+'\n')
+    logging.info('  Based on '+str(len(TgtMacs))+' Mac in neighbouring files and '+str(CMac)+' matching the 2 days before, file reduced to '+str(fileMacs)+' Macs.')
 
 # 5. Remove duplicate rows and Deck hops and add Geofencing
+#    m=len(dfData)     # Some experimental code to strip duplicate rows using Data Frames.
+#    t3=time.time()
+#    dfData.time.apply(lambda x: x.strftime('%d/%m/%Y %H:%M:%S'))
+#    dup_row=(dfData.mac==dfData.mac.shift(-1) and dfData.time==dfData.time.shift(-1) and dfData.floor==dfData.floor.shift(-1) and dfData.x==dfData.x.shift(-1) and dfData.y==dfData.y.shift(-1) and dfData.area[0:3]=='PQU') or (dfData.mac==dfData.mac.shift(1) and dfData.time==dfData.time.shift(1) and dfData.deck==dfData.deck.shift(1) and dfData.x==dfData.x.shift(1) and dfData.y==dfData.y.shift(1) and dfData.area[0:3]=='PQU') 
+#    dfData=dfData._ix[~(dup_row),:]
+#    m=m-len(dfData)
+#    print(time.time()-t3,' duplicate rows removed',m)
     Deck1=[]
     Row1=[None]*9
     Row2=[]
@@ -212,12 +176,8 @@ while date1<currentdate:
     Row4=[]
     n=0
     m=0
-    FileData = dfData.values
-    dfData = dfData3
-    dfData3 = pd.DataFrame(columns=['mac','type','time','user','area','site','bld','floor','x','y'])
-    dfData4 = dfData2
-    dfData2 = dfMacs
-    for row in FileData:
+#    FileData = dfData.values
+    for row in dfData.values:
         if row[0]!=Row1[0]: #reset if Mac number changes and on first pass
             Prime=[]
             Count=0
@@ -274,7 +234,11 @@ while date1<currentdate:
     TargetData.append(Row3)
     TargetData.append(Row2)
     TargetData.append(Row1)
-    logRun.write ('  '+str(m)+' duplicate row and '+str(n-3)+' deck hops removed, leaving '+str(Size)+' rows - Geofencing added'+'\n')
+    logging.info ('  '+str(m)+' duplicate row and '+str(n-3)+' deck hops removed, leaving '+str(Size)+' rows - Geofencing added'+'\n')
+    dfData = dfData3
+    dfData3 = pd.DataFrame(columns=['mac','type','time','user','area','site','bld','floor','x','y'])
+    dfData4 = dfData2
+    dfData2 = dfMacs
     
     #  6. Create a new file containing the cleaned data and reset for next loop
     with gzip.open(rootDir+file1path+subDirout+cleaned+file1date+'.csv.gz','wt', newline='') as outputFile:
@@ -283,10 +247,9 @@ while date1<currentdate:
     outputFile.close()
     t2=time.time()
     print ('Loop time = ',t2-t1)
-    logRun.write ('  Cleaned file saved at '+file1path+subDirout+cleaned+file1date+'.csv.gz'+', loop time ='+str(t2-t1)+'\n'+'\n')
+    logging.info ('  Cleaned file saved at '+file1path+subDirout+cleaned+file1date+'.csv.gz'+', loop time ='+str(t2-t1)+'\n')
     date1=date1+timedelta(days=1)
     t1=t2
     continue
 t2=time.time()
-logRun.write ('Run Time = '+str((t2-t0)/60)+' mins')
-logRun.close()
+logging.info ('Run Time = '+str((t2-t0)/60)+' mins')
