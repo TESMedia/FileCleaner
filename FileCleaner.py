@@ -14,7 +14,7 @@ file = 'TUI_DI1_history_data_'                          # name of files are to b
 macexclusions = 'exclusionsDiscovery1'                  # exclusions file to be located at 'rootDir'
 excludeDays = 29                                        # Macs that occur longer than this number of days are exluded
 cleaned = 'TUI_D1_location_data_'                       # name allocated to cleaned file ='cleaned+MM-DD-YYYY.csv.gz'
-runFrom = 70                                            # days prior to current day processing starts from (normally 15)
+runFrom = 15                                            # days prior to current day processing starts from (normally 15)
 findMore = 1500                                         # if Common Macs falls below this threshold, next day is added
 logfile = 'Log for run  '
 tfrom = ' 18:00:00'
@@ -54,7 +54,7 @@ logdate="{:%m%d-%H%M}".format(currentdate)
 logging.basicConfig(filename=rootDir+logfile+logdate+'.txt',format='%(levelname)s: %(message)s',level=logging.DEBUG)
 logging.info('Log '+logdate+',  '+Prog)
 
-date1=currentdate-timedelta(days=7)
+date1=currentdate-timedelta(days=4)
 x=0
 y=0
 while x<excludeDays:                                   #identify any extra Mac Addresses to Exclude
