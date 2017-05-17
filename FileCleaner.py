@@ -1,4 +1,4 @@
-Prog='FILE CLEANER v1.3' # - 13 Mar 2017 - Jon Masters 
+Prog='FILE CLEANER v1.4' # - 17 May 2017 - Jon Masters 
 # This Programme will clean a set of data files ready for detailed analysis by:
 #  a) removing data rows related to randomised Mac Addresses
 #  b) removing Mac Address included in an exclusion file (static devices and crew)
@@ -14,7 +14,7 @@ file = 'TUI_DI1_history_data_'                          # name of files are to b
 macexclusions = 'exclusionsDiscovery1'                  # exclusions file to be located at 'rootDir'
 excludeDays = 29                                        # Macs that occur longer than this number of days are exluded
 cleaned = 'TUI_D1_location_data_'                       # name allocated to cleaned file ='cleaned+MM-DD-YYYY.csv.gz'
-runFrom = 15                                            # days prior to current day processing starts from (normally 15)
+runFrom = 18                                            # days prior to current day processing starts from (normally 15)
 findMore = 1500                                         # if Common Macs falls below this threshold, next day is added
 logfile = 'Log for run  '
 tfrom = ' 18:00:00'
@@ -41,6 +41,7 @@ import pandas as pd
 import datetime
 from datetime import date
 from datetime import timedelta
+import glob
 import os
 import errno
 import gzip
@@ -65,7 +66,7 @@ while x<excludeDays:                                   #identify any extra Mac A
         dfData = pd.read_csv(rootDir+file1path+subDirout+'TUI_D1_Macs'+file1date+'.csv.gz', usecols = [0], names=['mac'])
     except IOError as e:
         y=y+1
-        if y>5:
+        if y>20:
             dfMacs=pd.DataFrame(columns=['mac'])
             break
         continue
@@ -112,7 +113,9 @@ while date1<currentdate:
         continue
     if dfData.empty==True:
         try:
-            dfData = pd.read_csv(rootDir+file1path+'\\'+file+file1date+'.csv.gz' , names=['mac','type','time','user','area','site','bld','floor','x','y'], parse_dates = ['time'])
+            all_file_parts = glob.glob(os.path.join(rootDir+file1path+"\\"+file+file1date+".csv*.gz"))
+            df_from_each_file = (pd.read_csv(f, names=['mac','type','time','user','area','site','bld','floor','x','y'], parse_dates = ['time']) for f in all_file_parts)
+            dfData = pd.concat(df_from_each_file, ignore_index=True)
         except Exception as e:
             logging.error('Error occurred trying to read file to be cleaned dated '+file1date+', Programme terminated.'+'\n'+'      '+str(e))
             print ('Error reading file to be cleaned - ',e)
@@ -146,7 +149,9 @@ while date1<currentdate:
             dfData2= pd.read_csv(rootDir+file2path+subDirout+'TUI_D1_Macs'+file2date+'.csv.gz', usecols= [0], names=['mac'])
         except Exception as e:
             try:
-                dfData2=pd.read_csv(rootDir+file2path+'\\'+file+file2date+'.csv.gz', usecols= [0], names=['mac'])
+                all_file_parts = glob.glob(os.path.join(rootDir+file2path+"\\"+file+file2date+".csv*.gz"))
+                df_from_each_file = (pd.read_csv(f, usecols= [0], names=['mac'], parse_dates = ['time']) for f in all_file_parts)
+                dfData2 = pd.concat(df_from_each_file, ignore_index=True)
             except Exception as e:
                 logging.error('Error occurred trying to read file dated '+file2date+', Programme terminated.'+'\n'+'      '+str(e))
                 print('Error reading file day before - ',e)
@@ -159,7 +164,9 @@ while date1<currentdate:
             dfData4=pd.read_csv(rootDir+file4path+subDirout+'TUI_D1_Macs'+file4date+'.csv.gz', usecols= [0], names=['mac'])
         except Exception as e:
             try:
-                dfData4=pd.read_csv(rootDir+file4path+'\\'+file+file4date+'.csv.gz', usecols= [0], names=['mac'])
+                all_file_parts = glob.glob(os.path.join(rootDir+file4path+"\\"+file+file4date+".csv*.gz"))
+                df_from_each_file = (pd.read_csv(f, usecols= [0], names=['mac'], parse_dates = ['time']) for f in all_file_parts)
+                dfData4 = pd.concat(df_from_each_file, ignore_index=True)
             except Exception as e:
                 logging.error('Error occurred trying to read file dated '+file4date+', Programme terminated.'+'\n'+'      '+str(e))
                 print('Error reading file 2 days before - ',e)
@@ -175,7 +182,9 @@ while date1<currentdate:
         file3date="{:%m-%d-%Y}".format(date1+timedelta(days=1))
         file3path="{:%y%m}".format(date1+timedelta(days=1))
         try:
-            dfData3 = pd.read_csv(rootDir+file3path+'\\'+file+file3date+'.csv.gz' , names=['mac','type','time','user','area','site','bld','floor','x','y'], parse_dates=['time'])
+            all_file_parts = glob.glob(os.path.join(rootDir+file3path+"\\"+file+file3date+".csv*.gz"))
+            df_from_each_file = (pd.read_csv(f, names=['mac','type','time','user','area','site','bld','floor','x','y'], parse_dates = ['time']) for f in all_file_parts)
+            dfData3 = pd.concat(df_from_each_file, ignore_index=True)
         except Exception as e:
             logging.error('Error occurred trying to read next days file dated '+file1date+', Programme terminated.'+'\n'+'      '+str(e))
             print ('Error reading next days file - ',e)
@@ -196,13 +205,6 @@ while date1<currentdate:
     logging.info('  Based on '+str(len(TgtMacs))+' Mac in neighbouring files and '+str(CMac)+' matching the 2 days before, file reduced to '+str(fileMacs)+' Macs.')
 
 # 5. Remove duplicate rows and Deck hops and add Geofencing
-#    m=len(dfData)     # Some experimental code to strip duplicate rows using Data Frames.
-#    t3=time.time()
-#    dfData.time.apply(lambda x: x.strftime('%d/%m/%Y %H:%M:%S'))
-#    dup_row=(dfData.mac==dfData.mac.shift(1))&(dfData.time==dfData.time.shift(1))&(dfData.floor==dfData.floor.shift(1))&(dfData.x==dfData.x.shift(1))&(dfData.y==dfData.y.shift(1))&(dfData.area[0:3]=='PQU')
-#    dfData=dfData.ix[~(dup_row),:]
-#    m=m-len(dfData)
-#    print(time.time()-t3,' duplicate rows removed',m)
     Deck1=[]
     Row1=[None]*9
     Row2=[]
