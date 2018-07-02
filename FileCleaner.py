@@ -1,5 +1,5 @@
-Prog='FILE CLEANER v2.0' # - 14 Mar 2018 - Jon Masters 
-# 2.0 - amended process to remove short journeys and retain Mac Addresses present across 3 day periods
+Prog='FILE CLEANER v3.0' # - 14 Mar 2018 - Jon Masters 
+# 3.0 - amended process to remove short journeys, retain Mac Addresses present across 5 day periods, and create a visits file
 # This Programme will clean a set of data files ready for detailed analysis by:
 #  a) removing data rows related to randomised Mac Addresses
 #  b) removing Mac Address included in an exclusion file (static devices and crew)
@@ -8,15 +8,15 @@ Prog='FILE CLEANER v2.0' # - 14 Mar 2018 - Jon Masters
 #  e) removing deck hops and adding GEOFENCING
 
 # 1.  Configuration
-Sites = ["DI1","DI2"]
-RunType ='Routine'                                      # enter either 'Routine' or 'Save'
+Sites = ["EXP","DI2","DI1"]
+RunType ='Routine'                                          # enter either 'Routine','Gap' or 'Save'
 rootDir = 'c:\\Users\\Jon Masters\\Documents\\Python\\' # input files to be located at 'rootDir + YYMM (of file)'
 #rootDir = 'c:\\Users\\porro\\Documents\\Thomson Cruises\\sftp\\discovery1\\'
 cleaned = 'TUI_'                                        # name allocated to cleaned file = cleaned+site+'location_data_MM-DD-YYYY.csv.gz'
 excludeDays = 22                                        # Macs that occur longer than this number of days are exluded
-runFrom = 15                                            # days prior to current day processing starts from (normally 15)
+runFrom = 12                                            # days prior to current day processing starts from (normally 15)
 tfrom = ' 18:00:00'
-print (Prog)
+print (Prog,'\n')
 
 import matplotlib.path as mplPath
 import numpy as np                                     # To add GeoFencing also update code lines 250-270  
@@ -78,6 +78,15 @@ Barcoords =[ [60.5, 8.92],                           # Configuration - Coordinat
            [ 60.5,  28.96] ]
 Deck10MiniGolf = mplPath.Path(np.array(Barcoords))
 
+delta_secs = 1800
+dwell_secs = 60
+group1 = ['BGJSHOP','BLSSHOP','BFFWSHOP','BPERFSHOP','BSOUVSHOP']
+group2 = ['POO000447DEGP','POO000447DEGSB','PQQ00547DEGGALL','PQQ00547DEG']
+group3 = ['POO0005VEN2NDLNG','POO0005VENMIDLNG','POO0005VENCONLNG','POO0005VENENT']
+group4 = ['POO0004BRDWLNGP','POO0004BRDWLNGSB']
+group5 = ['POO0009WHPOOL9P','POO0009WHPOOL9SB']
+group6 = ['POO0006CFPRTSB','POO0006CFPRTP','POO0003CFPRTWIN']
+
 import time                                            # Establish current time
 t0=time.time()
 t1=t0
@@ -95,7 +104,7 @@ import logging
 
 # 2. Initial set up, establish a start date for Files to be cleaned, and initiate loop
 currentdate = datetime.datetime.today()                # create a run log file with current DateTime in file name 
-logdate="{:%m%d-%H%M}".format(currentdate)
+logdate="{:%y%b%d-%H%M}".format(currentdate)
 logging.basicConfig(filename=rootDir+'Log for run '+logdate+'.txt',format='%(levelname)s: %(message)s',level=logging.DEBUG)
 logging.info('Log '+logdate+',  '+Prog)
 
@@ -116,7 +125,7 @@ for Site in Sites:
             dfData = pd.read_csv(rootDir+file1path+subDirout+cleaned+Site+'_Macs'+file1date+'.csv.gz', usecols = [0], names=['mac'])
         except IOError as e:
             y=y+1
-            if y>20:
+            if y>21:
                 dfMacs=pd.DataFrame(columns=['mac'])
                 break
             continue
@@ -131,7 +140,7 @@ for Site in Sites:
         dfExcl = pd.read_csv(rootDir+macexclusions+'.csv', usecols= [0,1,2], header=0)
     except Exception as e:
         logging.info('Error occurred reading Mac Address exclusion file'+'\n'+'      '+str(e))
-        print ('Reading exclusions file failed',e)
+        print (' Reading exclusions file failed',e)
         dfExcl = pd.DataFrame(columns=['mac','type','used'])
     dfExcl['mac']=dfExcl['mac'].str.lower()
     MacExcl= dfExcl.mac.unique()
@@ -141,7 +150,7 @@ for Site in Sites:
     dfExcl.sort_values(['mac'], ascending=[True], inplace=True)
     MacExcl= dfExcl.mac.unique()                           # establish data for start up and initiate loop
     dfUnused = dfExcl
-    print ('With',len(dfMacs),'added, total Mac exclusions =',len(MacExcl),'(',x,' Mac Files used,',y,' not found)')
+    print (' With',len(dfMacs),'added, total Mac exclusions =',len(MacExcl),'(',x,' Mac Files used,',y,' not found)')
     logging.info ('With '+str(len(dfMacs))+' added, total Mac exclusions = '+str(len(MacExcl))+' ('+str(x)+' used,'+str(y)+' not found)')
     dfMacs = pd.DataFrame(columns=['mac'])
     dfData = pd.DataFrame(columns=['mac'])
@@ -151,14 +160,14 @@ for Site in Sites:
     date1=currentdate-timedelta(days=runFrom)
     while date1<currentdate:
 
-    # 3. If no cleaned file exists, load the original file and remove unwanted Mac Addresses
+# 3. If no cleaned file exists, load the original file and remove unwanted Mac Addresses
         TargetData=[]
         file1date="{:%m-%d-%Y}".format(date1)
         file1path="{:%y%m}".format(date1)
         if os.path.isfile(rootDir+file1path+subDirout+cleaned+Site[0]+Site[-1]+'_location_data_'+file1date+'.csv.gz')==True:
             logging.info('Cleaned file found for date '+file1date)
             date1=date1+timedelta(days=1)
-            print (file1date,'already cleaned')
+            print ('File ',file1date,'already cleaned')
             dfData = dfData1
             dfData1= dfData2
             dfData2= pd.DataFrame(columns=['mac'])                        
@@ -173,6 +182,7 @@ for Site in Sites:
                 print ('Error reading original file',file1date,' - ',e)
                 noorg=noorg+1
                 if noorg>2:
+                    print ()
                     break
                 else:
                     date1=date1+timedelta(days=1)
@@ -195,9 +205,10 @@ for Site in Sites:
         YMac = InitMacs-XMac-NMac
         print ('File ',file1date,' loaded, ',XMac,' randomised and ',YMac,' exclusion Macs removed, leaving ',NMac,'Macs.')
         logging.info('File '+str(file1date)+' initial rows '+str(InitSize)+', '+str(XMac)+' random and '+str(YMac)+' excluded Macs removed, leaving '+str(NMac))
-        if len(dfData.floor.unique())<12: 
+        if len(dfData.floor.unique())<12:
+            decks = len(dfData.floor.unique()) 
             print ('    WARNING - data only exists for decks ',decks)
-            logging.info('WARNING - data only exists for decks '+decks)
+            logging.info('WARNING - data only exists for decks '+str(decks))
         dfStart = dfData.drop_duplicates(subset=['mac'], keep='first', inplace=False)
         dfEnd = dfData.drop_duplicates(subset=['mac'], keep='last', inplace=False)
         dfStart = pd.concat([dfStart,dfEnd])
@@ -223,11 +234,11 @@ for Site in Sites:
                 raise
         dfStart.to_csv(rootDir+file1path+subDirout+cleaned+Site+'_Macs'+file1date+'.csv.gz', index=False, compression='gzip')
 
-    # 4. Identify the Mac Addresses that are common to those in the data files on days prior to and after the target file.
+# 4. Identify the Mac Addresses that are common to those in the data files on days prior to and after the target file.
         dfData0 = pd.DataFrame(columns=['mac'])
         x=0
         y=0
-        while x<4:
+        while x<4:                              # Load the Mac Addresses for previous 3 days
             x=x+1
             fileDate="{:%m-%d-%Y}".format(date1-timedelta(days=x))
             filePath="{:%y%m}".format(date1-timedelta(days=x))
@@ -240,13 +251,14 @@ for Site in Sites:
                 print('    No Macs found for',displayDate,' - ')
                 y=y+1
             continue
-        if y==3 and RunType=='Routine':
-            logging.error('Insufficient data to validate Mac Addresses. Completing processing for this site')
-            print('    Insufficient data to validate Mac Addresses.  Completing processing for this site')
-            break
+        if y>1:
+            if RunType=='Routine':
+                logging.error('Insufficient data to validate Mac Addresses. Completing processing for this site')
+                print('    Insufficient data to validate Mac Addresses.  Completing processing for this site')
+                break
         else:
             print('    Loaded Mac Addresses for previous days with ',y,'files not found, now loading future files')
-        fileDate="{:%m-%d-%Y}".format(date1+timedelta(days=1))
+        fileDate="{:%m-%d-%Y}".format(date1+timedelta(days=1))          # load Macs addresses for 1 day in the future
         filePath="{:%y%m}".format(date1+timedelta(days=1))
         displayDate="{:%Y-%m-%d}".format(date1+timedelta(days=1))
         try:
@@ -261,7 +273,7 @@ for Site in Sites:
                 print ('    Error reading next day Macs file dated ',displayDate,' - ')
                 dfMacs = pd.DataFrame(columns=['mac'])
                 x=6
-        fileDate="{:%m-%d-%Y}".format(date1+timedelta(days=2))
+        fileDate="{:%m-%d-%Y}".format(date1+timedelta(days=2))          # load file for 2 days in the future - save Mac Addresses
         filePath="{:%y%m}".format(date1+timedelta(days=2))
         displayDate="{:%Y-%m-%d}".format(date1+timedelta(days=2))
         try:
@@ -271,6 +283,11 @@ for Site in Sites:
             dfData2['mac'] = dfData2['mac'].str.lower()
             Macs2 = dfData2.mac.unique()
             df2Macs=pd.DataFrame(Macs2,columns=['mac'])
+            try:
+                os.makedirs(rootDir+filePath+subDirout)                # Create the Cleaned sub-directory if it does not already exist
+            except IOError as e:
+                if e.errno!=errno.EEXIST:
+                    raise
             df2Macs.to_csv(rootDir+filePath+subDirout+cleaned+Site+'_Macs'+fileDate+'.csv.gz', index=False, compression='gzip')
             dfData0 = pd.concat([dfData0,dfMacs,df2Macs])
             checkMac = dfData0.mac.unique()
@@ -279,19 +296,24 @@ for Site in Sites:
             logging.error('Error reading future file dated '+displayDate+'\n'+'      '+str(e))
             print ('    Error reading future file dated ',displayDate)
             if RunType=='Routine':
-                print ('Insufficient data to continue routine run type, completing processing for Site')
-                logging.error('Insufficient data to continue a routine run type - completing processing for this site')
+                print ('Insufficient data to continue Routine run type, completing processing for Site',Site)
+                logging.error('Insufficient data to continue a Routine run type - completing processing for this site')
                 break
             else:
-                dfData2 = pd.DataFrame(columns=['mac'])
-                if x!=6:
+                dfData2 = pd.DataFrame()
+                if x!=6 and y<3:
                     dfData0 = pd.concat([dfData0,dfMacs])
                     checkMac = dfData0.mac.unique()
                     dfData =  dfData[dfData['mac'].isin(checkMac)]                    
                     print('    File will be updated based on Mac Address data available')
                 else:
-                    print('    RunType Save and LACK OF FILES before and after, so continuing with no further Macs removed')
-                    logging.error ('Runtype Save with LACK OF FILES before and after - file will be saved with no further Macs removed')
+                    if RunType=='Gap':
+                        print('    Insufficient data to continue Gap runtype, completing processing for Site',Site)
+                        logging.error('    Insufficient data to continue Gap run type - completing processing for this site')
+                        break   
+                    else:
+                        print('    ',y,'files before and 0 after, but RunType Save so continuing with no further Macs removed')
+                        logging.error ('LACK OF FILES before and after - file will be cleaned and saved with no further Macs removed')
         NMac = len(dfData.mac.unique())
         print ('    Macs removed if they do not occur in files 2 days before or after, leaving ',NMac,'Macs.')
         logging.info('  Macs removed if they do not occur in files 2 days before or after, leaving '+str(NMac)+' Macs.')
@@ -309,7 +331,7 @@ for Site in Sites:
     #    dfData.reset_index()                            #reset index
     #    print (' and',len(dfData)-Size,' rows added to separate them out')
 
-    # 5. Remove duplicate rows and Deck hops and add Geofencing
+# 5. Remove duplicate rows and Deck hops and add Geofencing
         Deck1=[]
         Row1=[None]*9
         Row2=[]
@@ -386,24 +408,74 @@ for Site in Sites:
         TargetData.append(Row2)
         TargetData.append(Row1)
         Size=len(TargetData)
-        print (m,' duplicate and ',n-3,' deck hops removed, leaving ',Size,' rows (initial size -',InitSize,')')
+        print ('   ',m,' duplicate and ',n-3,' deck hops removed, leaving ',Size,' rows (initial size -',InitSize,')')
         if p>0:
-            print ('WARNING - ',p,' rows detected that had more than 2 comma separated areas defined - only one retained') 
+            print ('   WARNING - ',p,' rows detected that had more than 2 comma separated areas defined - only one retained') 
         logging.info ('  '+str(m)+' duplicate row and '+str(n-3)+' deck hops removed, leaving '+str(Size)+' rows - Geofencing added')
     
-        #  6. Create a new file containing the cleaned data and reset for next loop
-        with gzip.open(rootDir+file1path+subDirout+cleaned+Site[0]+Site[-1]+'_location_data_'+file1date+'.csv.gz','wt', newline='') as outputFile:
-            csvWriter = csv.writer(outputFile)
-            csvWriter.writerows(TargetData)
-        outputFile.close()
+        #  6. Create a new file containing the cleaned data and prepare file for creating visits
+        dfTarget=pd.DataFrame(TargetData, columns=['mac','trilat_result','time','dwell_periods','area','site','bld','deck','x','y'])
+        dfTarget.to_csv(rootDir+file1path+subDirout+cleaned+Site[0]+Site[-1]+'_location_data_'+file1date+'.csv.gz', header=True, index=False, compression='gzip')
         t2=time.time()
-        print ('Loop time = ',str(int(t2-t1)),'secs')
-        logging.info ('  Cleaned file saved at '+file1path+subDirout+cleaned+Site[0]+Site[-1]+'location_data_'+file1date+'.csv.gz'+', loop time '+str(int(t2-t1))+'s'+'\n')
+        print ('   Loop time = ',str(int(t2-t1)),'secs')
+        logging.info ('  Cleaned file saved at '+file1path+subDirout+cleaned+Site[0]+Site[-1]+'_location_data_'+file1date+'.csv.gz'+', loop time '+str(int(t2-t1))+'s')
+        dfTarget['seq']=0
+        dfTarget['until']=dfTarget['time']
+        dfTarget['area1'] = dfTarget['area']
+        dfTarget['area1']=dfTarget['area1'].str.upper()
+        dfTarget=dfTarget[(dfTarget['area1']!="NAN")]
+        dfTarget.loc[(dfTarget['area1'].isin(group1)), ['area1']] = 'Shops'
+        dfTarget.loc[(dfTarget['area1'].isin(group2)), ['area1']] = '47Degree'
+        dfTarget.loc[(dfTarget['area1'].isin(group3)), ['area1']] = 'VenueLounge'
+        dfTarget.loc[(dfTarget['area1'].isin(group4)), ['area1']] = 'BroadwayLounge'
+        dfTarget.loc[(dfTarget['area1'].isin(group5)), ['area1']] = 'Whirlpool'
+        dfTarget.loc[(dfTarget['area1'].isin(group6)), ['area1']] = 'CoffeePort'
+        dfTarget.loc[(dfTarget.area1.str[0:3]=="PUU"), ['area1']] = dfTarget['area'].str[0:7]
+        dfTarget.loc[(dfTarget.area1.str[0:3]=="PSU"), ['area1']] = dfTarget['area'].str[0:7]
+        dfTarget.loc[(dfTarget.area1.str[0:3]=="PQU"), ['area1']] = dfTarget['area'].str[0:7]
+#        dfTarget.loc[(dfTarget['area1']=="   "), ['area']] = 'On'+dfTarget['deck']
+        dfTarget.sort_values(['mac','area1','time'], ascending=[True,True,True], inplace=True)
+        dfTarget=dfTarget.reset_index(drop=True)
+        print ('     Data updated to enable creation of visits')
+
+#7  Establish data point sequences and create visits
+        cond1 = dfTarget['area1']==dfTarget['area1'].shift(1)
+        cond2 = (((dfTarget['time']-dfTarget['time'].shift(1)).dt.seconds)<(delta_secs+dfTarget['dwell_periods']*5))
+        combd = (cond1&cond2)
+        dfTarget.loc[combd, ['seq']] = 1
+        dfTarget.loc[(dfTarget['seq']==(dfTarget['seq'].shift(-1))+1), ['seq']] = 2
+        dfTarget=dfTarget[(dfTarget['seq']!=1)]
+        dfTarget=dfTarget.reset_index()
+        dfTarget['count'] = 1
+        dfTarget['count'] = (dfTarget['index'].shift(-1)-dfTarget['index'])
+        dfTarget.loc[(dfTarget['seq']+2==dfTarget['seq'].shift(-1)), ['until']] = dfTarget['time'].shift(-1)
+        dfTarget.loc[(dfTarget['seq']+2==dfTarget['seq'].shift(-1)), ['count']] = dfTarget['count']+1
+        dfTarget = dfTarget[(dfTarget['seq']!=2)]
+        dfTarget = dfTarget[(dfTarget['area1']!="NAN")]
+        NewSize = len(dfTarget)
+        print ('     Journeys created, removing ',InitSize-NewSize,' rows of data and leaving',NewSize)
+#8  Clean up Data file, identify length of each visit, and remove visits of zero time (single data point rows)
+        dfTarget.sort_values(['mac','time'], ascending=[True,True], inplace=True)
+        dfTarget=dfTarget.reset_index(drop=True)
+        dfTarget.loc[(dfTarget.area1.str[0:3]=="PUU"), ['area']] = dfTarget['area1']
+        dfTarget['t_diff']=0
+        dfTarget.loc[(dfTarget['count']>1), ['t_diff']] = ((dfTarget['until']-dfTarget['time']).dt.seconds)
+        dfTarget['dwell_periods']= dfTarget['dwell_periods']+dfTarget['count']
+        dfTarget.drop(['index','seq','area1','site','bld','x','y','count'], axis=1, inplace=True, errors='ignore')
+        MacCount=len(dfTarget.mac.unique())
+        print ('     Preparation of data completed, file reduced to ',len(dfTarget),'rows,',MacCount,' Mac Addresses')
+        logging.info ('    Visits file created with '+str(len(dfTarget))+' data rows, Mac Addresses ='+str(MacCount))
+
+#9  Save visits file and prepare for next loop
+        dfTarget.to_csv(rootDir+file1path+subDirout+cleaned+Site+'_visits_'+file1date+'.csv.gz', header=True, index=False, compression='gzip')
+        t2=time.time()
+        print ('     Visits file saved -  Total loop time = ',str(int(t2-t1)),'secs','\n')
+        logging.info ('  Visits file saved at '+file1path+subDirout+cleaned+Site+'_visits'+file1date+'.csv.gz'+', loop time '+str(int(t2-t1))+'s'+'\n')
         date1=date1+timedelta(days=1)
         t1=t2
         dfData = dfData1
         dfData1= dfData2
-        dfData2= dfData3
+        dfData3= pd.DataFrame()
         continue
     MacList=dfUnused.mac.unique()
     dfExcl=dfExcl[dfExcl.mac.isin(MacList)==False]
