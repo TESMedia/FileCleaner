@@ -1,5 +1,5 @@
 Prog='FILE CLEANER v3.0' # - 14 Mar 2018 - Jon Masters 
-# 3.0 - amended process to remove short journeys, retain Mac Addresses present across 5 day periods, and create a visits file
+# 3.0 - amended process to remove short journeys, retain Mac Addresses if present on neighbouring days, add Explorer 1, and create a visits file
 # This Programme will clean a set of data files ready for detailed analysis by:
 #  a) removing data rows related to randomised Mac Addresses
 #  b) removing Mac Address included in an exclusion file (static devices and crew)
@@ -8,14 +8,13 @@ Prog='FILE CLEANER v3.0' # - 14 Mar 2018 - Jon Masters
 #  e) removing deck hops and adding GEOFENCING
 
 # 1.  Configuration
-Sites = ["EXP","DI2","DI1"]
+Sites = ["DI1","DI2","EXP"]
 RunType ='Routine'                                          # enter either 'Routine','Gap' or 'Save'
 rootDir = 'c:\\Users\\Jon Masters\\Documents\\Python\\' # input files to be located at 'rootDir + YYMM (of file)'
 #rootDir = 'c:\\Users\\porro\\Documents\\Thomson Cruises\\sftp\\discovery1\\'
 cleaned = 'TUI_'                                        # name allocated to cleaned file = cleaned+site+'location_data_MM-DD-YYYY.csv.gz'
 excludeDays = 22                                        # Macs that occur longer than this number of days are exluded
 runFrom = 12                                            # days prior to current day processing starts from (normally 15)
-tfrom = ' 18:00:00'
 print (Prog,'\n')
 
 import matplotlib.path as mplPath
@@ -142,7 +141,6 @@ for Site in Sites:
         logging.info('Error occurred reading Mac Address exclusion file'+'\n'+'      '+str(e))
         print (' Reading exclusions file failed',e)
         dfExcl = pd.DataFrame(columns=['mac','type','used'])
-    dfExcl['mac']=dfExcl['mac'].str.lower()
     MacExcl= dfExcl.mac.unique()
     dfMacs=dfMacs[dfMacs.mac.isin(MacExcl)==False]         # add any extra Mac Addresses to exclude
     dfMacs['type'] = 'Added '+logdate
@@ -153,9 +151,9 @@ for Site in Sites:
     print (' With',len(dfMacs),'added, total Mac exclusions =',len(MacExcl),'(',x,' Mac Files used,',y,' not found)')
     logging.info ('With '+str(len(dfMacs))+' added, total Mac exclusions = '+str(len(MacExcl))+' ('+str(x)+' used,'+str(y)+' not found)')
     dfMacs = pd.DataFrame(columns=['mac'])
-    dfData = pd.DataFrame(columns=['mac'])
-    dfData1 = pd.DataFrame(columns=['mac'])
-    dfData2 = pd.DataFrame(columns=['mac'])   
+    dfData = pd.DataFrame()
+    dfData1 = pd.DataFrame()
+    dfData2 = pd.DataFrame()   
     noorg=0
     date1=currentdate-timedelta(days=runFrom)
     while date1<currentdate:
@@ -170,7 +168,7 @@ for Site in Sites:
             print ('File ',file1date,'already cleaned')
             dfData = dfData1
             dfData1= dfData2
-            dfData2= pd.DataFrame(columns=['mac'])                        
+            dfData2= pd.DataFrame()                        
             continue
         if dfData.empty==True:
             try:
@@ -188,7 +186,7 @@ for Site in Sites:
                     date1=date1+timedelta(days=1)
                     dfData = dfData1
                     dfData1= dfData2
-                    dfData2= pd.DataFrame(columns=['mac'])           
+                    dfData2= pd.DataFrame()           
                     continue
         noorg=0
         dfData['mac']=dfData['mac'].str.lower()   
@@ -293,27 +291,25 @@ for Site in Sites:
             checkMac = dfData0.mac.unique()
             dfData =  dfData[dfData['mac'].isin(checkMac)]
         except Exception as e:
-            logging.error('Error reading future file dated '+displayDate+'\n'+'      '+str(e))
+            logging.error('Error reading future file dated '+displayDate+': '+str(e))
             print ('    Error reading future file dated ',displayDate)
-            if RunType=='Routine':
-                print ('Insufficient data to continue Routine run type, completing processing for Site',Site)
-                logging.error('Insufficient data to continue a Routine run type - completing processing for this site')
-                break
-            else:
-                dfData2 = pd.DataFrame()
-                if x!=6 and y<3:
-                    dfData0 = pd.concat([dfData0,dfMacs])
-                    checkMac = dfData0.mac.unique()
-                    dfData =  dfData[dfData['mac'].isin(checkMac)]                    
-                    print('    File will be updated based on Mac Address data available')
+            if x!=6:
+                fileDate="{:%m-%d-%Y}".format(date1+timedelta(days=3))          # check for file 3 days ahead (so a 1 day gap)
+                filePath="{:%y%m}".format(date1+timedelta(days=3))
+                if os.path.isfile(rootDir+filePath+"\\"+file+fileDate+".csv.gz")==False and RunType!='Save':
+                    print ('Insufficient data to continue Routine or Gap run type, completing processing for Site',Site)
+                    logging.error('Insufficient data to continue a Routine or Gap run type - completing processing for this site')
+                    break
                 else:
-                    if RunType=='Gap':
-                        print('    Insufficient data to continue Gap runtype, completing processing for Site',Site)
-                        logging.error('    Insufficient data to continue Gap run type - completing processing for this site')
-                        break   
-                    else:
-                        print('    ',y,'files before and 0 after, but RunType Save so continuing with no further Macs removed')
-                        logging.error ('LACK OF FILES before and after - file will be cleaned and saved with no further Macs removed')
+                    dfData2 = pd.DataFrame()
+                    if y<3:
+                        dfData0 = pd.concat([dfData0,dfMacs])
+                        checkMac = dfData0.mac.unique()
+                        dfData =  dfData[dfData['mac'].isin(checkMac)]                    
+                        print('    Neighbouring days missing but Save Runtype, so File being updated based on Mac Address data available')
+            else:
+                print('    ',y,'files before and 0 after, but RunType Save so continuing with no further Macs removed')
+                logging.error ('LACK OF FILES before and after - file will be cleaned and saved with no further Macs removed')
         NMac = len(dfData.mac.unique())
         print ('    Macs removed if they do not occur in files 2 days before or after, leaving ',NMac,'Macs.')
         logging.info('  Macs removed if they do not occur in files 2 days before or after, leaving '+str(NMac)+' Macs.')
@@ -340,8 +336,7 @@ for Site in Sites:
         n=0
         m=0
         p=0
-        dfData.rename(columns={'last_updated_time':'time','building':'bld','xcoords':'x','ycoords':'y'},inplace='true')
-        dfData = dfData[['mac','trilat_result','time','dwell_periods','area','site','bld','floor','x','y']]            
+        dfData = dfData[['mac','trilat_result','last_updated_time','dwell_periods','area','site','building','floor','xcoords','ycoords','start_ts']]            
         for row in dfData.values:
             Areas = str(row[4])
             Areas = Areas.split(",")
@@ -414,16 +409,16 @@ for Site in Sites:
         logging.info ('  '+str(m)+' duplicate row and '+str(n-3)+' deck hops removed, leaving '+str(Size)+' rows - Geofencing added')
     
         #  6. Create a new file containing the cleaned data and prepare file for creating visits
-        dfTarget=pd.DataFrame(TargetData, columns=['mac','trilat_result','time','dwell_periods','area','site','bld','deck','x','y'])
+        dfTarget=pd.DataFrame(TargetData, columns=['mac','trilat_result','time','dwell_periods','area','site','bld','deck','x','y','start_ts'])
         dfTarget.to_csv(rootDir+file1path+subDirout+cleaned+Site[0]+Site[-1]+'_location_data_'+file1date+'.csv.gz', header=True, index=False, compression='gzip')
         t2=time.time()
         print ('   Loop time = ',str(int(t2-t1)),'secs')
         logging.info ('  Cleaned file saved at '+file1path+subDirout+cleaned+Site[0]+Site[-1]+'_location_data_'+file1date+'.csv.gz'+', loop time '+str(int(t2-t1))+'s')
-        dfTarget['seq']=0
-        dfTarget['until']=dfTarget['time']
+        dfTarget['seq'] = 0
+        dfTarget['until'] = dfTarget['time']
         dfTarget['area1'] = dfTarget['area']
-        dfTarget['area1']=dfTarget['area1'].str.upper()
-        dfTarget=dfTarget[(dfTarget['area1']!="NAN")]
+        dfTarget['area1'] = dfTarget['area1'].str.upper()
+        dfTarget = dfTarget[(dfTarget['area1']!="NAN")]
         dfTarget.loc[(dfTarget['area1'].isin(group1)), ['area1']] = 'Shops'
         dfTarget.loc[(dfTarget['area1'].isin(group2)), ['area1']] = '47Degree'
         dfTarget.loc[(dfTarget['area1'].isin(group3)), ['area1']] = 'VenueLounge'
@@ -433,9 +428,8 @@ for Site in Sites:
         dfTarget.loc[(dfTarget.area1.str[0:3]=="PUU"), ['area1']] = dfTarget['area'].str[0:7]
         dfTarget.loc[(dfTarget.area1.str[0:3]=="PSU"), ['area1']] = dfTarget['area'].str[0:7]
         dfTarget.loc[(dfTarget.area1.str[0:3]=="PQU"), ['area1']] = dfTarget['area'].str[0:7]
-#        dfTarget.loc[(dfTarget['area1']=="   "), ['area']] = 'On'+dfTarget['deck']
         dfTarget.sort_values(['mac','area1','time'], ascending=[True,True,True], inplace=True)
-        dfTarget=dfTarget.reset_index(drop=True)
+        dfTarget = dfTarget.reset_index(drop=True)
         print ('     Data updated to enable creation of visits')
 
 #7  Establish data point sequences and create visits
@@ -458,10 +452,10 @@ for Site in Sites:
         dfTarget.sort_values(['mac','time'], ascending=[True,True], inplace=True)
         dfTarget=dfTarget.reset_index(drop=True)
         dfTarget.loc[(dfTarget.area1.str[0:3]=="PUU"), ['area']] = dfTarget['area1']
-        dfTarget['t_diff']=0
-        dfTarget.loc[(dfTarget['count']>1), ['t_diff']] = ((dfTarget['until']-dfTarget['time']).dt.seconds)
-        dfTarget['dwell_periods']= dfTarget['dwell_periods']+dfTarget['count']
-        dfTarget.drop(['index','seq','area1','site','bld','x','y','count'], axis=1, inplace=True, errors='ignore')
+        dfTarget['t_diff']= ((dfTarget['until']-dfTarget['start_ts']).dt.seconds)
+        dfTarget['dwell_periods']= dfTarget['dwell_periods']+dfTarget['count']-1
+        dfTarget['time'] = dfTarget['start_ts']
+        dfTarget.drop(['index','seq','area1','site','bld','x','y','count','start_ts'], axis=1, inplace=True, errors='ignore')
         MacCount=len(dfTarget.mac.unique())
         print ('     Preparation of data completed, file reduced to ',len(dfTarget),'rows,',MacCount,' Mac Addresses')
         logging.info ('    Visits file created with '+str(len(dfTarget))+' data rows, Mac Addresses ='+str(MacCount))
@@ -475,7 +469,8 @@ for Site in Sites:
         t1=t2
         dfData = dfData1
         dfData1= dfData2
-        dfData3= pd.DataFrame()
+        dfData2= pd.DataFrame()
+        dfTarget=pd.DataFrame()
         continue
     MacList=dfUnused.mac.unique()
     dfExcl=dfExcl[dfExcl.mac.isin(MacList)==False]
